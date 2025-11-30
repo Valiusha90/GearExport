@@ -1,0 +1,7 @@
+## Interface: 11200
+## Title: GearExport
+## Notes: Export equipped gear to JSON
+## Author: Valiusha
+## Version: 1.0
+
+GearExport.lua
