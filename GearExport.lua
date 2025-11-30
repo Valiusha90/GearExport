@@ -1,8 +1,8 @@
 -- ======================================
--- GearExport v7.7 (Ordered JSON + Weapon Type)
+-- GearExport v7.9 (Repetition + Pattern Enchant Fix + Ordered JSON + Weapon Type)
 -- ======================================
 
-DEFAULT_CHAT_FRAME:AddMessage("|cFF33FF99GearExport v7.7 loaded!|r")
+DEFAULT_CHAT_FRAME:AddMessage("|cFF33FF99GearExport v7.9 loaded!|r")
 
 local DEBUG = false -- set true for verbose output
 
@@ -18,7 +18,7 @@ local function CleanLink(text)
 end
 
 -------------------------------------------------
--- Fixed stat order
+-- Fixed stat order for JSON
 -------------------------------------------------
 local STAT_ORDER = {
     "str", "agi", "int", "spi", "sta",
@@ -41,8 +41,6 @@ local function toJSON(tbl)
         local t = type(v)
         if t == "table" then
             local parts = {}
-
-            -- If it's a stats table, serialize in our fixed order
             if key == "stats" then
                 for _, statKey in ipairs(STAT_ORDER) do
                     if v[statKey] ~= nil then
@@ -50,13 +48,11 @@ local function toJSON(tbl)
                     end
                 end
             else
-                -- Normal unordered table
                 for k, val in pairs(v) do
                     table.insert(parts, '"' .. escape(k) .. '":' .. serialize(val, k))
                 end
             end
             return "{" .. table.concat(parts, ",") .. "}"
-
         elseif t == "string" then
             return '"' .. escape(v) .. '"'
         elseif t == "number" or t == "boolean" then
@@ -89,7 +85,7 @@ for i=1,30 do
 end
 
 -------------------------------------------------
--- Tooltip stat extraction
+-- Tooltip stat extraction (v7.9 logic)
 -------------------------------------------------
 local function GetItemStats(slotId)
     local link = GetInventoryItemLink("player", slotId)
@@ -97,6 +93,7 @@ local function GetItemStats(slotId)
 
     local baseStats = {str=0,agi=0,sta=0,int=0,spi=0,ap=0,crit=0,hit=0}
     local enchStats = {str=0,agi=0,sta=0,int=0,spi=0}
+    local seenStats = {str=false,agi=false,sta=false,int=false,spi=false}
 
     local lines = {}
     scanner:ClearLines()
@@ -116,12 +113,24 @@ local function GetItemStats(slotId)
 
     for _, text in ipairs(lines) do
         local function parseStat(statName, key)
-            local base = tonumber(string.match(text, "^%+(%d+)%s*" .. statName))
-            local ench = tonumber(string.match(text, statName .. "%s*%+(%d+)"))
-            if base then
-                baseStats[key] = baseStats[key] + base
-            elseif ench then
-                enchStats[key] = enchStats[key] + ench
+            -- Match both "+6 agility" and "agility +6"
+            local valAfter = tonumber(string.match(text, "%+(%d+)%s*" .. statName))
+            local valBefore = tonumber(string.match(text, statName .. "%s*%+(%d+)"))
+
+            if valBefore then
+                -- Rule 1: statname +X → always enchant
+                enchStats[key] = enchStats[key] + valBefore
+                if DEBUG then DEFAULT_CHAT_FRAME:AddMessage("|cff33ff99[GE]|r "..statName.." +"..valBefore.." (explicit enchant)") end
+            elseif valAfter then
+                -- Rule 2: second occurrence → enchant
+                if seenStats[key] then
+                    enchStats[key] = enchStats[key] + valAfter
+                    if DEBUG then DEFAULT_CHAT_FRAME:AddMessage("|cff33ff99[GE]|r +"..valAfter.." "..statName.." (repeat→enchant)") end
+                else
+                    baseStats[key] = baseStats[key] + valAfter
+                    seenStats[key] = true
+                    if DEBUG then DEFAULT_CHAT_FRAME:AddMessage("|cff33ff99[GE]|r +"..valAfter.." "..statName.." (base)") end
+                end
             end
         end
 
@@ -244,7 +253,7 @@ btn:SetScript("OnClick",function()
     frame.editBox:HighlightText()
 end)
 
-SLASH_GEAR_EXPORT1 = "/gearjson"
+SLASH_GEAR_EXPORT1 = "/gex"
 SlashCmdList["GEAR_EXPORT"] = function()
     if frame:IsShown() then frame:Hide() else frame:Show() end
 end
